@@ -49,7 +49,7 @@ report/          proposal, milestone, final report
 
 ## Pipeline
 
-1. `src/extract.py`: raw zips to per-day parquet (done)
-2. cleaning and feature construction (drop crossed/stale quotes, build features)
-3. models: naive mean and OLS baselines, elastic net, gradient-boosted trees
-4. residual analysis: k-means on the contracts with the largest positive residuals
+1. `src/extract.py`: raw zips to per-day parquet
+2. `src/build_dataset.py`: filters, features, CRSP merge, 5000 contracts per day sample
+3. `src/train.py`: naive and OLS baselines, elastic net, gradient-boosted trees, out-of-sample eval
+4. next: k-means on the contracts with the largest positive residuals
