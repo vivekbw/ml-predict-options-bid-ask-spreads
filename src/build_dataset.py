@@ -11,7 +11,7 @@ import pandas as pd
 from pathlib import Path
 
 DATA = Path(__file__).resolve().parents[1] / "data"
-CRSP_ZIP = next(DATA.glob("crsp/crsp_*.csv.zip"))
+CRSP_ZIP = DATA / "crsp" / "updated-final-crsp-data.zip"
 OUT = DATA / "model" / "dataset.parquet"
 
 PER_DAY = 5000
@@ -20,20 +20,22 @@ SEED = 42
 
 def load_crsp() -> pd.DataFrame:
     crsp = pd.read_csv(CRSP_ZIP, skiprows=1)
-    crsp.columns = ["date", "permno", "tsymbol", "ticker", "shrcd",
-                    "prc", "vol", "ret", "shrout"]
+    crsp.columns = [c.split("-")[0] for c in crsp.columns]  # strip CHASS labels
+    crsp = crsp.rename(columns={"tradedt": "date", "hshrcd": "shrcd"})
     crsp = crsp[crsp.shrcd.isin([10, 11, 12])].copy()  # common stock only
-    crsp["ticker"] = crsp.ticker.fillna(crsp.tsymbol)
+    crsp["ticker"] = crsp.htick.fillna(crsp.htsymbol)
     crsp["ret"] = pd.to_numeric(crsp.ret, errors="coerce")
+    crsp.loc[crsp.vol < 0, "vol"] = np.nan  # CRSP codes missing volume as negative
 
-    # trailing 21-day realized vol, annualized
+    # trailing 21-day realized vol, annualized; the file starts Nov 2023 so
+    # January 2024 has a full window
     crsp = crsp.sort_values(["permno", "date"])
     crsp["stock_vol"] = (crsp.groupby("permno").ret
                              .transform(lambda s: s.rolling(21).std())
                          * np.sqrt(252))
     crsp["log_stock_volume"] = np.log1p(crsp.vol)
 
-    crsp = crsp.dropna(subset=["ticker", "stock_vol"])
+    crsp = crsp.dropna(subset=["ticker", "stock_vol", "log_stock_volume"])
     crsp = crsp.drop_duplicates(["ticker", "date"])
     return crsp[["ticker", "date", "stock_vol", "log_stock_volume"]]
 
