@@ -85,5 +85,5 @@ these curves to roughly zero, which is why OLS saw nothing.
 | Name | Contribution |
 |---|---|
 | Vivek B | Majority of the code: data pipeline, dataset construction, models, residual clustering, robustness checks, figures |
-| Rithvik K | Research approach and design, milestone report, final white paper |
-| Zoya V | Research approach and design, milestone report, final white paper |
+| Rithvik K | Framed the research question and hypotheses, literature review (Glosten-Milgrom, Christoffersen et al.), sample selection and filter design, drafted the milestone report, methodology and results sections of the white paper |
+| Zoya V | Research design and target/feature definitions, CRSP data sourcing and validation, interpretation of the residual clusters against the two theories, milestone report editing and exhibits, introduction and conclusions of the white paper |
