@@ -52,4 +52,7 @@ report/          proposal, milestone, final report
 1. `src/extract.py`: raw zips to per-day parquet
 2. `src/build_dataset.py`: filters, features, CRSP merge, 5000 contracts per day sample
 3. `src/train.py`: naive and OLS baselines, elastic net, gradient-boosted trees, out-of-sample eval
-4. next: k-means on the contracts with the largest positive residuals
+4. `src/residuals.py`: k-means on the contracts with the largest positive residuals
+5. `src/robustness.py`: ticker split, GBDT tuning, sampling sensitivity, partial dependence plots
+
+Results from steps 4 and 5 are written up in `report/post_milestone.md`.
