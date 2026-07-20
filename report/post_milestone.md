@@ -79,3 +79,11 @@ the money below moneyness 1 and flattens in the money, and realized
 volatility has a strong negative effect that is entirely concentrated
 below about 0.4, then flat. A single linear coefficient averages each of
 these curves to roughly zero, which is why OLS saw nothing.
+
+## Contributions
+
+| Name | Contribution |
+|---|---|
+| Vivek B | Majority of the code: data pipeline, dataset construction, models, residual clustering, robustness checks, figures |
+| Rithvik K | Research approach and design, milestone report, final white paper |
+| Zoya V | Research approach and design, milestone report, final white paper |
