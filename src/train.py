@@ -13,7 +13,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_error
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "model" / "dataset.parquet"
-SPLIT = "2024-10-01"
+SPLIT = "2024-10-01" # Training Set: Jan - Sept, Holdout Set: Oct - Dec
 
 FEATURES = ["moneyness", "days_to_expiry", "is_call", "log_option_volume",
             "log_stock_price", "log_stock_volume", "stock_vol"]
