@@ -60,6 +60,18 @@ near the ceiling for these features. Cutting the training sample to 1,000
 contracts per day costs 0.003 of R2, so the 5,000/day rate is not doing
 any heavy lifting.
 
+We also checked that nothing depends on the randomization seeds. Every
+seed in the pipeline (the GBDT's internal seed, the per-day subsample
+seed, and the ticker holdout seed) was varied over {0, 7, 42, 123} in a
+4x4 grid for each of three settings, 48 fits in total. MASE lands in
+0.505 to 0.507 for the 2,500/day subsample, 0.507 to 0.511 at 1,000/day,
+and 0.519 to 0.528 across ticker splits, where the holdout seed changes
+which underlyings are held out and so moves the number the most. Even
+that widest band is under 0.01 of MASE, far smaller than the gap to the
+next best model. The full grid is in `report/figures/fig5_seed_mase.png`;
+within any column of the heatmaps the model seed changes MASE by at most
+0.001, so the fit itself is essentially deterministic.
+
 Partial dependence plots for moneyness and realized volatility are in
 `report/figures/fig4_pdp.png`. Both effects the linear models missed are
 visible directly: predicted spread rises steeply as contracts move out of

@@ -1,9 +1,9 @@
 """Robustness checks for the GBDT result.
 
-Four checks from the milestone report: a split by ticker instead of time,
-a small hyperparameter grid validated on Aug-Sep, sensitivity to the
-per-day sampling rate, and partial dependence plots for the two features
-whose effects looked nonlinear.
+Five checks: a split by ticker instead of time, a small hyperparameter
+grid validated on Aug-Sep, sensitivity to the per-day sampling rate,
+sensitivity to every randomization seed, and partial dependence plots
+for the two features whose effects looked nonlinear.
 """
 
 import matplotlib
@@ -17,6 +17,14 @@ from sklearn.metrics import mean_absolute_error, r2_score
 from common import DATA, FEATURES, FIGURES, fit_gbdt, load_split
 
 SEED = 42
+SEEDS = [0, 7, 42, 123]
+INK = "#333333"
+
+plt.rcParams.update({"font.family": "serif", "font.serif": ["CMU Serif"],
+                     "mathtext.fontset": "cm", "text.color": INK,
+                     "axes.labelcolor": INK, "xtick.color": INK,
+                     "ytick.color": INK,
+                     "axes.unicode_minus": False})  # CMU lacks the glyph
 
 
 def score(name, gbdt, test):
@@ -65,8 +73,84 @@ def sampling_sensitivity(train, test):
         score(f"trained on {per_day}/day subsample", fit_gbdt(sub), test)
 
 
+def mase(gbdt, test, naive_level):
+    pred = gbdt.predict(test[FEATURES])
+    naive = np.full(len(test), naive_level)
+    return (mean_absolute_error(test.rel_spread, pred)
+            / mean_absolute_error(test.rel_spread, naive))
+
+
+def seed_grids(train, test):
+    """MASE over a model seed x data seed grid, three settings."""
+    grids = {}
+
+    for per_day in [2500, 1000]:
+        m = np.zeros((len(SEEDS), len(SEEDS)))
+        for j, ds in enumerate(SEEDS):
+            sub = (train.groupby("date", group_keys=False)
+                        .apply(lambda d: d.sample(per_day, random_state=ds)))
+            for i, ms in enumerate(SEEDS):
+                m[i, j] = mase(fit_gbdt(sub, random_state=ms), test,
+                               sub.rel_spread.mean())
+        grids[f"{per_day}/day subsample, time split"] = ("sampling seed", m)
+
+    df = pd.read_parquet(DATA)
+    tickers = np.sort(df.ticker.unique())
+    m = np.zeros((len(SEEDS), len(SEEDS)))
+    for j, ds in enumerate(SEEDS):
+        rng = np.random.default_rng(ds)
+        held = set(rng.choice(tickers, int(0.2 * len(tickers)), replace=False))
+        tr, te = df[~df.ticker.isin(held)], df[df.ticker.isin(held)]
+        for i, ms in enumerate(SEEDS):
+            m[i, j] = mase(fit_gbdt(tr, random_state=ms), te,
+                           tr.rel_spread.mean())
+    grids["ticker split, full sample"] = ("holdout seed", m)
+    return grids
+
+
+def seed_figure(grids, baseline):
+    fig, axes = plt.subplots(2, 2, figsize=(9, 8))
+    mats = [m for _, m in grids.values()]
+    lo, hi = min(m.min() for m in mats), max(m.max() for m in mats)
+
+    for ax, (title, (xlabel, m)) in zip(axes.flat, grids.items()):
+        ax.imshow(m, cmap="Greys", vmin=lo - 0.005, vmax=hi + 0.005)
+        for i in range(len(SEEDS)):
+            for j in range(len(SEEDS)):
+                dark = (m[i, j] - lo + 0.005) / (hi - lo + 0.01) > 0.6
+                ax.text(j, i, f"{m[i, j]:.3f}", ha="center", va="center",
+                        fontsize=9, color="white" if dark else INK)
+        ax.set_xticks(range(len(SEEDS)), SEEDS)
+        ax.set_yticks(range(len(SEEDS)), SEEDS)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("model seed")
+        ax.set_title(title, fontsize=11)
+
+    # fourth panel: every run against the milestone baseline
+    ax = axes.flat[3]
+    for row, (title, (_, m)) in enumerate(grids.items()):
+        vals = m.ravel()
+        ax.scatter(vals, np.full(len(vals), row), s=28, color="#555555",
+                   alpha=0.6, edgecolors="none")
+    ax.axvline(baseline, color="#999999", ls="--", lw=1)
+    ax.text(baseline, 2.55, " milestone baseline", fontsize=9, color="#777777")
+    ax.set_yticks(range(len(grids)),
+                  [t.split(",")[0] for t in grids], fontsize=9)
+    ax.set_ylim(-0.5, 2.8)
+    ax.set_xlabel("MASE")
+    ax.set_title("all 48 runs", fontsize=11)
+    for s in ["top", "right", "left"]:
+        ax.spines[s].set_visible(False)
+    ax.tick_params(left=False)
+
+    fig.suptitle("MASE across randomization seeds")
+    fig.tight_layout()
+    out = FIGURES / "fig5_seed_mase.png"
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out}")
+
+
 def pdp_figure(gbdt, train):
-    ink, line = "#333333", "#3B6EA5"
     fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))
     panels = [("moneyness", "Moneyness", (0.5, 2.0)),
               ("stock_vol", "Realized volatility (annualized)", (0.05, 1.5))]
@@ -74,13 +158,13 @@ def pdp_figure(gbdt, train):
         grid = np.linspace(lo, hi, 60)
         pd_res = partial_dependence(gbdt, train[FEATURES], [feat],
                                     custom_values={feat: grid})
-        ax.plot(grid, pd_res["average"][0], color=line, lw=2)
-        ax.set_xlabel(label, color=ink)
-        ax.set_ylabel("Predicted relative spread", color=ink)
+        ax.plot(grid, pd_res["average"][0], color=INK, lw=2)
+        ax.set_xlabel(label)
+        ax.set_ylabel("Predicted relative spread")
         ax.grid(alpha=0.25, lw=0.5)
         for s in ["top", "right"]:
             ax.spines[s].set_visible(False)
-    fig.suptitle("GBDT partial dependence", color=ink)
+    fig.suptitle("GBDT partial dependence")
     fig.tight_layout()
     out = FIGURES / "fig4_pdp.png"
     fig.savefig(out, dpi=150)
@@ -102,7 +186,14 @@ def main():
     print("\n3. per-day sampling rate:")
     sampling_sensitivity(train, test)
 
-    print("\n4. partial dependence plots:")
+    print("\n4. randomization seeds:")
+    baseline = mase(fit_gbdt(train), test, train.rel_spread.mean())
+    grids = seed_grids(train, test)
+    for title, (_, m) in grids.items():
+        print(f"  {title:<32} MASE {m.min():.3f} to {m.max():.3f}")
+    seed_figure(grids, baseline)
+
+    print("\n5. partial dependence plots:")
     pdp_figure(fit_gbdt(train), train)
 
 
