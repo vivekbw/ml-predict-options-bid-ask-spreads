@@ -6,13 +6,18 @@ on their characteristics. The cluster profiles are the evidence for the
 information asymmetry vs dealer capacity question.
 """
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
-from common import FEATURES, fit_gbdt, load_split
+from common import FEATURES, FIGURES, INK, fit_gbdt, load_split, plot_style
+
+plot_style()
 
 TOP_PCT = 0.95
 SEED = 42
@@ -68,6 +73,47 @@ def main():
     base = test[profile_cols].median()
     print("\nfull test set medians for comparison:")
     print(base.round(3).to_string())
+
+    cluster_figure(flagged)
+
+
+def cluster_figure(flagged):
+    """One panel per cluster on the two axes that separate them:
+    days to expiry and open interest."""
+    # order clusters by size so A is always the big never-traded one
+    order = flagged.cluster.value_counts().index
+    a, b = flagged[flagged.cluster == order[0]], flagged[flagged.cluster == order[1]]
+
+    rng = np.random.default_rng(SEED)
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.6), sharey=True)
+    panels = [(a, "Cluster A", "never trades, zero open interest,\n"
+               r"long dated $\rightarrow$ dealer capacity"),
+              (b, "Cluster B", "trades actively, short dated, cheap\n"
+               r"OTM puts $\rightarrow$ information asymmetry")]
+    for ax, (grp, name, desc) in zip(axes, panels):
+        n = min(len(grp), 3000)
+        g = grp.sample(n, random_state=SEED)
+        # jitter the many zero-OI points into a visible band
+        y = g.log_open_interest + rng.uniform(-0.15, 0.15, n)
+        ax.scatter(g.days_to_expiry, y, s=6, color="#555555", alpha=0.25,
+                   edgecolors="none")
+        ax.scatter(grp.days_to_expiry.median(),
+                   np.log1p(grp.open_interest.median()), marker="D", s=45,
+                   color=INK, zorder=3)
+        ax.set_title(f"{name} ({len(grp):,} contracts)", fontsize=12)
+        ax.text(0.97, 0.95, desc, transform=ax.transAxes, ha="right",
+                va="top", fontsize=10, color="#777777")
+        ax.set_xlabel("Days to expiry")
+        ax.grid(alpha=0.25, lw=0.5)
+        for s in ["top", "right"]:
+            ax.spines[s].set_visible(False)
+    axes[0].set_ylabel("log(1 + open interest)")
+    fig.suptitle("The 5% of spreads the model most understates "
+                 "(diamond = cluster median)")
+    fig.tight_layout()
+    out = FIGURES / "fig6_clusters.png"
+    fig.savefig(out, dpi=150)
+    print(f"\nwrote {out}")
 
 
 if __name__ == "__main__":

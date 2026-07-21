@@ -11,6 +11,18 @@ SPLIT = "2024-10-01"
 FEATURES = ["moneyness", "days_to_expiry", "is_call", "log_option_volume",
             "log_stock_price", "log_stock_volume", "stock_vol"]
 
+INK = "#333333"
+
+
+def plot_style():
+    """Grayscale CMU Serif style used by all report figures."""
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({"font.family": "serif", "font.serif": ["CMU Serif"],
+                         "mathtext.fontset": "cm", "text.color": INK,
+                         "axes.labelcolor": INK, "xtick.color": INK,
+                         "ytick.color": INK,
+                         "axes.unicode_minus": False})  # CMU lacks the glyph
+
 
 def load_split():
     """Same time split as train.py."""

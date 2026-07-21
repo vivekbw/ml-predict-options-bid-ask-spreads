@@ -14,17 +14,12 @@ import pandas as pd
 from sklearn.inspection import partial_dependence
 from sklearn.metrics import mean_absolute_error, r2_score
 
-from common import DATA, FEATURES, FIGURES, fit_gbdt, load_split
+from common import DATA, FEATURES, FIGURES, INK, fit_gbdt, load_split, plot_style
 
 SEED = 42
 SEEDS = [0, 7, 42, 123]
-INK = "#333333"
 
-plt.rcParams.update({"font.family": "serif", "font.serif": ["CMU Serif"],
-                     "mathtext.fontset": "cm", "text.color": INK,
-                     "axes.labelcolor": INK, "xtick.color": INK,
-                     "ytick.color": INK,
-                     "axes.unicode_minus": False})  # CMU lacks the glyph
+plot_style()
 
 
 def score(name, gbdt, test):
