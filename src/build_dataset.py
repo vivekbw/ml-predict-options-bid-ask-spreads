@@ -79,6 +79,9 @@ def build_day(path: str, crsp: pd.DataFrame, counts: dict) -> pd.DataFrame:
         "log_stock_price": np.log((df.uBid + df.uAsk) / 2),
         "log_stock_volume": df.log_stock_volume,
         "stock_vol": df.stock_vol,
+        # carried through for the residual and cost analyses, not features
+        "opt_mid": (df.bidPrc + df.askPrc) / 2,
+        "open_interest": df.openInterest,
     })
     return out
 

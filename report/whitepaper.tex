@@ -1,0 +1,520 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{caption}
+\usepackage[hidelinks]{hyperref}
+\usepackage{float}
+\usepackage{array}
+
+\graphicspath{{figures/}}
+\captionsetup{font=small, labelfont=bf}
+\setlength{\parskip}{4pt}
+
+\title{\textbf{Predicting Option Bid-Ask Spreads (B6): White Paper}}
+\author{Zoya V, Rithvik K, Vivek B \\ BU 493}
+\date{July 21, 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent We ask how much of the cross-sectional variation in US equity option
+bid-ask spreads is explained by observable contract and stock characteristics,
+and what the unexplained part looks like. On 1.26 million contract-days sampled
+from all listed equity options in 2024, gradient-boosted trees explain 61\% of
+out-of-sample variance in relative spreads and halve the mean absolute error of
+a naive benchmark, while linear models capture almost nothing: the structure is
+strongly nonlinear, dominated by moneyness. Clustering the contracts the model
+most understates yields two economically distinct groups: a large group of
+never-traded, zero-open-interest, long-dated options consistent with limited
+dealer capacity, and a smaller group of actively traded, short-dated,
+out-of-the-money puts on volatile names consistent with information asymmetry.
+For the flagged contracts, a round trip costs a median \$265 per contract
+against a \$183 premium, \$155 more than characteristics predict.
+\end{abstract}
+
+\section{Introduction}
+
+The bid-ask spread on an option is simultaneously the cost a trader pays to
+transact and the compensation a market maker earns for providing liquidity.
+For equity options the stakes are large: the median contract in our sample
+costs about 12\% of its own premium to buy and immediately sell, and the wide
+tail costs more than 100\%. Understanding what drives this cost matters for
+anyone trading options, for dealers setting quotes, and for the theory of
+market making itself, where the two canonical explanations for wide spreads,
+adverse selection against informed traders and the inventory cost of providing
+liquidity in thin markets, have very different implications.
+
+We ask two questions. First, how much of the cross-sectional variation in
+option spreads can be explained by observable contract characteristics
+(moneyness, time to expiry, option type, volume) and characteristics of the
+underlying stock (price, share volume, realized volatility)? Second, for the
+contracts whose spreads are far wider than those characteristics predict, does
+the excess look like information asymmetry, in the sense of Glosten and
+Milgrom (1985), or like limited dealer capacity, in the sense of
+Christoffersen, Goyenko, Jacobs, and Karoui (2018)?
+
+Our contribution is a simple, reproducible pipeline that answers both. A
+gradient-boosted tree model on seven features explains 61\% of out-of-sample
+variance in relative spreads, while linear models on the same features explain
+4\%, so the pricing of option liquidity is predictable but strongly nonlinear.
+More interestingly, the residuals are not noise: k-means clustering of the 5\%
+of test contracts the model most understates recovers two distinct groups that
+map cleanly onto the two theories, and we translate the excess spread of those
+contracts into dollar transaction costs.
+
+\section{Related literature}
+
+Our question sits at the intersection of classic microstructure theory and
+recent empirical work on option liquidity and machine learning.
+
+\textbf{Glosten and Milgrom (1985)} provide the canonical adverse-selection
+model of the spread: a risk-neutral dealer quoting against potentially
+informed traders sets a positive spread even with zero inventory or order
+processing costs, and the spread widens with the probability of informed
+trading. This motivates our information-asymmetry interpretation for wide
+spreads on contracts that trade actively.
+
+\textbf{Easley, O'Hara, and Srinivas (1998)} show that informed traders use
+option markets, and that leverage makes cheap out-of-the-money options the
+natural vehicle. This is exactly the profile of our second residual cluster:
+short-dated, low-premium, out-of-the-money puts on volatile names.
+
+\textbf{Christoffersen, Goyenko, Jacobs, and Karoui (2018)} document large
+illiquidity premia in equity options and argue that market maker inventory and
+capacity constraints, not only adverse selection, drive option illiquidity.
+This motivates our dealer-capacity interpretation for wide spreads on
+contracts with no volume and no open interest.
+
+\textbf{Muravyev (2016)} shows that option order flow imbalances move prices
+because of inventory risk borne by market makers, providing direct evidence
+that dealer positioning affects option transaction costs.
+
+\textbf{Gu, Kelly, and Xiu (2020)} establish that tree-based and neural
+methods dominate linear models for cross-sectional return prediction because
+they capture nonlinearities and interactions. Our finding that boosted trees
+explain 61\% of spread variation where OLS explains 4\% is the liquidity
+analogue of their result.
+
+\section{Data}
+
+We combine two sources for calendar year 2024:
+
+\begin{enumerate}
+  \item \textbf{Option close marks}: one file per trading day covering all
+  listed US equity options, about 1.46 million contracts per day across
+  roughly 6,100 underlyings (252 days, 381 million contract-day rows in
+  total). Close marks are market maker quotes that are live at the close
+  whether or not the contract traded that day.
+  \item \textbf{CRSP daily stock file} for the underlyings, November 2023
+  through December 2024: price, returns, share volume, shares outstanding, and
+  share codes for 10,675 securities. The two months of 2023 give January 2024
+  a full realized-volatility window.
+\end{enumerate}
+
+The target is the relative spread, $2(ask - bid)/(ask + bid)$, which
+normalizes for option price levels so expensive options are not mislabeled as
+liquid. It is bounded above by 2 and equals the round-trip transaction cost as
+a fraction of the option premium.
+
+Features are moneyness ($S/K$ for calls, $K/S$ for puts, with $S$ the
+underlying quote midpoint), days to expiry, a call dummy, $\log(1 +
+\text{option volume})$, log underlying price, log share volume, and 21-day
+realized volatility from CRSP returns (annualized). Logs are applied where
+values span several orders of magnitude.
+
+\begin{table}[H]
+\centering
+\caption{Sample selection.}
+\begin{tabular}{lr}
+\toprule
+Filter & Contract-days remaining \\
+\midrule
+All contract-days & 381,499,776 \\
+Has a real quote ($bid > 0$, $ask > bid$) & 291,945,225 \\
+Valid underlying quote & 285,522,061 \\
+Option mid price $\geq$ \$0.10 & 280,895,128 \\
+7 to 365 days to expiry & 233,052,649 \\
+Matched to CRSP common stock (share codes 10-12) & 145,540,966 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The quote filter removes deep out-of-the-money contracts no dealer quotes. The
+minimum price filter removes penny options whose relative spread is
+mechanically near its maximum of 2. The expiry filter drops contracts inside
+one week of expiration and illiquid long-dated contracts. The CRSP match
+restricts to common stocks, excluding ETFs, ADRs, and funds. There is no
+missing data after these filters. From the eligible sample we draw 5,000
+contracts per day at random with a fixed seed, giving a modeling dataset of
+1.26 million rows across 3,588 underlyings and all 252 trading days.
+
+\begin{table}[H]
+\centering
+\caption{Descriptive statistics, modeling sample (1.26M contract-days).}
+\begin{tabular}{lrrrrr}
+\toprule
+Variable & Mean & SD & P25 & Median & P75 \\
+\midrule
+Relative spread & 0.321 & 0.472 & 0.049 & 0.118 & 0.333 \\
+Moneyness & 1.35 & 2.16 & 0.91 & 1.12 & 1.43 \\
+Days to expiry & 107 & 92 & 30 & 74 & 175 \\
+log(1 + option volume) & 0.59 & 1.31 & 0 & 0 & 0 \\
+log stock price & 4.41 & 1.49 & 3.49 & 4.54 & 5.38 \\
+log share volume & 14.2 & 1.6 & 13.2 & 14.2 & 15.2 \\
+Realized vol (annualized) & 0.48 & 5.03 & 0.23 & 0.32 & 0.49 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+51\% of contracts are calls. 76\% of quoted contracts did not trade that day,
+which is typical for options and is why volume enters as $\log(1 +
+\text{volume})$. Figure~\ref{fig:dist} shows the heavy right tail of the
+target: the mean (0.32) is nearly three times the median (0.12).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{fig1_spread_dist.png}
+\caption{Distribution of the relative spread in the modeling sample.}
+\label{fig:dist}
+\end{figure}
+
+\section{Methodology}
+
+\textbf{Split.} We split by time: train on January through September (940K
+rows), test on October through December (320K rows). A random split would leak
+information, since the same contract appears on many adjacent days and
+near-duplicate rows would land on both sides.
+
+\textbf{Models and benchmarks.} The floor is a naive benchmark that predicts
+the training-set mean spread for every contract. Against it we fit OLS on all
+seven features, elastic net with penalty strength and L1 ratio chosen by
+3-fold cross-validation, and gradient-boosted regression trees
+(scikit-learn's histogram implementation, 300 iterations). Linear features are
+standardized so coefficients are comparable.
+
+\textbf{Hyperparameter selection.} For the boosted trees we validate a small
+grid (learning rate in $\{0.05, 0.1\}$, maximum leaves in $\{31, 63, 127\}$,
+600 iterations) on August-September, keeping October-December untouched. The
+selected configuration (learning rate 0.05, 63 leaves) improves test MAE by
+about 1\% over the defaults, so results below use the default settings unless
+noted; the model is not sensitive to tuning.
+
+\textbf{Metrics.} We report out-of-sample $R^2$, mean absolute error, and
+MASE, the ratio of the model's MAE to the naive benchmark's (below 1 is
+better). We do not use MAPE as a headline metric: true spreads near zero make
+percentage errors explode (376\% for OLS even as $R^2$ improves).
+
+\textbf{Residual analysis.} After fitting, we flag the 5\% of test contracts
+with the largest positive residuals (actual spread at least 0.57 above
+predicted; 16,000 contracts) and run k-means on their standardized
+characteristics (moneyness, expiry, option volume, open interest, stock
+price, share volume, realized volatility). The number of clusters is chosen
+by silhouette score over $k = 2$ to $6$. We then read the cluster profiles
+against the two theories of the spread.
+
+\section{Results}
+
+\subsection{Statistical performance}
+
+\begin{table}[H]
+\centering
+\caption{Out-of-sample performance, October to December 2024.}
+\begin{tabular}{lrrr}
+\toprule
+Model & Test $R^2$ & MAE & MASE \\
+\midrule
+Naive (train mean) & 0.00 & 0.324 & 1.000 \\
+OLS & 0.04 & 0.304 & 0.939 \\
+Elastic net (CV over penalty, L1 ratio) & 0.04 & 0.304 & 0.939 \\
+Gradient-boosted trees & 0.61 & 0.164 & 0.505 \\
+\bottomrule
+\end{tabular}
+\label{tab:models}
+\end{table}
+
+The cross-section of option spreads is explainable, but not linearly. OLS on
+all seven features barely beats the naive mean, and elastic net adds nothing:
+regularization solves variable selection and collinearity, and with seven
+sensible features neither is the bottleneck. The bottleneck is functional
+form. The boosted trees explain 61\% of out-of-sample variance and cut MAE in
+half relative to the naive baseline.
+
+Figure~\ref{fig:moneyness} shows why. The moneyness effect dominates
+(permutation importance puts it first by a factor of five over days to
+expiry) and is steeply nonlinear: spreads are small in the money, where the
+premium in the denominator is large, and explode out of the money. A single
+linear coefficient averages this curve to roughly zero. Realized volatility
+behaves the same way: its OLS coefficient is near zero, yet it carries real
+importance in the trees because its effect is concentrated entirely below
+volatility of about 0.4 (partial dependence plots in
+Appendix~\ref{app:figs}).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{fig2_moneyness.png}
+\caption{Median relative spread by moneyness, interquartile range shaded.
+The vertical line marks at the money.}
+\label{fig:moneyness}
+\end{figure}
+
+\subsection{The contracts the model most understates}
+
+\begin{table}[H]
+\centering
+\caption{Residual clusters: medians of the flagged 5\% of test contracts
+(16,000), k-means with $k=2$ chosen by silhouette.}
+\begin{tabular}{lrrr}
+\toprule
+Median & Cluster A (76\%) & Cluster B (24\%) & All test \\
+\midrule
+Relative spread & 1.61 & 1.53 & 0.12 \\
+Predicted spread & 0.66 & 0.55 & 0.16 \\
+Moneyness & 0.85 & 0.82 & 1.12 \\
+Days to expiry & 121 & 42 & 71 \\
+Option mid & \$2.41 & \$0.58 & \$8.95 \\
+Open interest & 0 & 102 & 1 \\
+Share with zero volume & 93\% & 21\% & 76\% \\
+log share volume & 13.7 & 15.1 & 14.3 \\
+Realized vol & 0.33 & 0.37 & 0.33 \\
+\bottomrule
+\end{tabular}
+\label{tab:clusters}
+\end{table}
+
+Both clusters are dominated by out-of-the-money puts (the median contract in
+each is a put, against a call majority overall), but they differ exactly
+along the line the two theories draw (Table~\ref{tab:clusters},
+Figure~\ref{fig:clusters}).
+
+\textbf{Cluster A is the dealer-capacity story.} These contracts essentially
+never trade: 93\% had zero volume that day and the median open interest is
+zero. They are long dated and sit on lower-volume underlyings. No order flow
+competes the spread down, and a dealer who fills one carries the inventory
+for months, so quotes are wide even though nothing suggests informed trading.
+This is the mechanism in Christoffersen et al. (2018).
+
+\textbf{Cluster B is consistent with information asymmetry.} These are cheap
+(median premium \$0.58), short-dated, out-of-the-money puts on high-volume,
+higher-volatility names, and they do trade: 79\% traded that day and median
+open interest is 102. This is the textbook vehicle for trading on bad news
+(Easley, O'Hara, and Srinivas, 1998), and a dealer quoting them faces exactly
+the adverse selection of Glosten and Milgrom (1985): the spread stays wide
+despite active flow.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{fig6_clusters.png}
+\caption{Flagged contracts by cluster on the two axes that separate them.
+Cluster assignment uses all seven characteristics, so the two-dimensional
+separation is strong but not exact.}
+\label{fig:clusters}
+\end{figure}
+
+\subsection{Economic magnitudes}
+
+The relative spread times the option mid price is the dollar spread per
+share; one contract covers 100 shares, so a round trip that crosses the full
+spread costs $\text{relative spread} \times \text{mid} \times 100$ dollars
+per contract. Table~\ref{tab:costs} reports median costs on the test set for
+several example positions.
+
+\begin{table}[H]
+\centering
+\caption{Median round-trip cost per contract, test set. ``Predicted'' applies
+the model's predicted spread to the same contracts.}
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Position & $n$ & Premium & Round trip & Predicted & Spread \\
+\midrule
+ATM, $\sim$1 month, top-decile stock volume & 1,170 & \$248 & \$15 & \$14 & 5.2\% \\
+ATM, $\sim$1 month, bottom-decile volume & 748 & \$690 & \$435 & \$349 & 37.9\% \\
+Out of the money (moneyness $<$ 0.8) & 44,173 & \$108 & \$60 & \$75 & 74.3\% \\
+Long dated ($>$ 180 days) & 72,146 & \$1,140 & \$200 & \$174 & 11.1\% \\
+All test contracts & 320,000 & \$895 & \$160 & \$164 & 11.7\% \\
+Flagged residual contracts (top 5\%) & 16,000 & \$183 & \$265 & \$95 & 159.6\% \\
+\bottomrule
+\end{tabular}
+\label{tab:costs}
+\end{table}
+
+The same one-month at-the-money trade costs \$15 on a liquid large cap and
+\$435 on a bottom-decile name, nearly two thirds of the premium. The flagged
+residual contracts cost more to round trip (\$265) than their median premium
+(\$183); \$155 of that per contract is excess over what their characteristics
+predict (75th percentile \$260). For a trader, the model is directly usable
+as a pre-trade cost estimate and as a screen for contracts whose quoted cost
+is far above its characteristic-implied level.
+
+\section{Robustness and discussion}
+
+\begin{table}[H]
+\centering
+\caption{Robustness of the headline result.}
+\begin{tabular}{lrr}
+\toprule
+Check & $R^2$ & MAE \\
+\midrule
+GBDT, time split (baseline) & 0.61 & 0.164 \\
+Split by ticker (717 names held out entirely) & 0.62 & 0.173 \\
+Tuned GBDT, time split & 0.61 & 0.162 \\
+Trained on 2,500/day subsample & 0.61 & 0.164 \\
+Trained on 1,000/day subsample & 0.61 & 0.164 \\
+\bottomrule
+\end{tabular}
+\label{tab:robust}
+\end{table}
+
+The result is stable in every direction we pushed it. Holding out 20\% of
+underlyings entirely gives the same $R^2$ as the time split, so the model is
+learning how characteristics map to spreads rather than memorizing per-name
+liquidity. Hyperparameter tuning improves MAE by about 1\%. Cutting the
+training sample to 1,000 contracts per day costs 0.003 of $R^2$, so the
+sampling rate is not doing any heavy lifting. We also varied every
+randomization seed in the pipeline (model seed, subsample seed, ticker-holdout
+seed) over a $4 \times 4$ grid in three settings, 48 fits in total: MASE
+spans 0.505 to 0.528 across all runs, and within any data seed the model seed
+moves it by at most 0.001 (Appendix~\ref{app:figs}). An early check in the
+same spirit: re-pulling CRSP to add delisted names left every headline number
+essentially unchanged.
+
+\textbf{What we learned.} Option liquidity pricing is predictable to a degree
+that surprised us, but only with a model that can represent curvature and
+interactions; the linear-versus-tree gap (0.04 versus 0.61) is the largest we
+have seen on any project. And the unexplained tail is not noise: it has
+economic structure that maps onto the two classic theories of the spread.
+
+\textbf{Where the result might fail.} Our spreads are quoted end-of-day
+spreads, not effective spreads: trades often execute inside the quote, so our
+cost levels are upper bounds, and the model ranks quoted rather than realized
+costs. The sample is a single year (2024), one volatility regime; a crisis
+year could shift both the level and the drivers. We exclude ETFs and index
+options by design, and the close-mark snapshot misses intraday dynamics
+entirely. Finally, the cluster labels are interpretive: the profiles are
+consistent with each theory, but we do not observe informed order flow, so
+Cluster B is evidence, not proof, of adverse selection.
+
+\textbf{With more time} we would test the information-asymmetry
+interpretation directly by linking Cluster B contracts to subsequent
+underlying returns and news events (do their underlyings fall more often than
+chance?), use intraday quotes and trades to measure effective spreads, extend
+to multiple years to span regimes, and model the spread's term structure
+within a contract's life rather than pooling contract-days.
+
+\section{Contribution statement}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{p{0.75in}p{4.9in}}
+\toprule
+Member & Contribution \\
+\midrule
+Vivek B & Majority of the code: data pipeline, dataset construction, models,
+residual clustering, robustness checks, figures \\
+Rithvik K & Framed the research question and hypotheses, literature review,
+sample selection and filter design, drafted the milestone report, methodology
+and results sections of the white paper \\
+Zoya V & Research design and target/feature definitions, CRSP data sourcing
+and validation, interpretation of the residual clusters against the two
+theories, milestone report editing and exhibits, introduction and conclusions
+of the white paper \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Declaration of AI usage}
+
+AI tools (Anthropic's Claude Opus 4.8 and Fable 5 models) were used as a
+productivity aid throughout this project, under the team's direction and with
+all output reviewed by us. Specifically, we used AI assistance to accelerate
+the implementation of analyses we had already designed (the residual
+clustering, robustness checks, and report figures), to debug and iterate on
+scripts, to draft and edit portions of the written reports, and to locate
+references and citation details. The research question, methodology,
+sample-selection decisions, and interpretation of results are our own, and
+every model, number, and figure in the final deliverables was regenerated and
+verified end to end by the team on our own data.
+
+We did not use AI to generate the research idea, choose the empirical
+strategy, or produce results we did not verify. Where AI-assisted drafting
+was used in the reports, the text was reviewed and revised by the team, and
+all claims were checked against our own output before inclusion.
+
+\section*{References}
+
+\begin{list}{}{\setlength{\itemindent}{-0.3in}\setlength{\leftmargin}{0.3in}}
+
+\item Christoffersen, P., Goyenko, R., Jacobs, K., and Karoui, M. (2018).
+Illiquidity premia in the equity options market. \textit{Review of Financial
+Studies}, 31(3), 811--851. \url{https://doi.org/10.1093/rfs/hhx113}
+
+\item Easley, D., O'Hara, M., and Srinivas, P. S. (1998). Option volume and
+stock prices: Evidence on where informed traders trade. \textit{Journal of
+Finance}, 53(2), 431--465.
+
+\item Glosten, L. R., and Milgrom, P. R. (1985). Bid, ask and transaction
+prices in a specialist market with heterogeneously informed traders.
+\textit{Journal of Financial Economics}, 14(1), 71--100.
+\url{https://doi.org/10.1016/0304-405X(85)90044-3}
+
+\item Gu, S., Kelly, B., and Xiu, D. (2020). Empirical asset pricing via
+machine learning. \textit{Review of Financial Studies}, 33(5), 2223--2273.
+
+\item Muravyev, D. (2016). Order flow and expected option returns.
+\textit{Journal of Finance}, 71(2), 673--708.
+
+\end{list}
+
+\appendix
+
+\section{Additional figures and tables}
+\label{app:figs}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{fig3_models.png}
+\caption{Out-of-sample $R^2$ by model, October to December 2024.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{fig4_pdp.png}
+\caption{Partial dependence of the predicted relative spread on moneyness and
+realized volatility. Both effects the linear models missed are visible:
+spreads rise steeply out of the money and flatten in the money, and realized
+volatility matters only below roughly 0.4. Each curve averages to
+approximately zero linearly, which is why OLS sees neither.}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{OLS coefficients on standardized features, largest magnitude first.}
+\begin{tabular}{lr}
+\toprule
+Feature & Coefficient \\
+\midrule
+log share volume & $-0.071$ \\
+Moneyness & $-0.064$ \\
+log stock price & $-0.051$ \\
+log option volume & $-0.034$ \\
+Days to expiry & $-0.022$ \\
+Call dummy & $-0.021$ \\
+Realized vol & $+0.004$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{fig5_seed_mase.png}
+\caption{MASE across randomization seeds. Three settings, each a $4 \times 4$
+grid of model seed by data seed; the fourth panel plots all 48 runs against
+the baseline. The ticker-split band is widest because each holdout seed
+defines a different test set, not a different fit.}
+\end{figure}
+
+\end{document}
